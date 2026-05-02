@@ -32,15 +32,23 @@
       if (part) parts.push(part)
     }
 
-    const safetyPrompt = [
-      'Genera una imagen realista de virtual try-on.',
-      'Mantén la identidad, cara, cuerpo, postura, iluminación y fondo de la persona de la primera imagen.',
-      'Solo cambia la ropa según las instrucciones y las imágenes de prendas de referencia.',
-      'No alteres edad, complexión, rasgos faciales, tono de piel ni identidad.',
-      'Calidad fotorrealista de moda y e-commerce.',
-      '',
-      prompt || '',
-    ].join(' ')
+    const safetyPrompt = `Virtual try-on task. You are given a reference photo of a real person (first image) and garment images.
+
+STRICT IDENTITY PRESERVATION RULES — these override everything else:
+- Keep the EXACT same person: same face, same facial features, same skin tone, same ethnicity, same hair color and texture, same body shape, same age appearance.
+- Keep the EXACT same pose, body position, and posture.
+- Keep the EXACT same background, lighting, and environment.
+- Do NOT change, idealize, or alter the person in any way.
+- Do NOT replace the person with a model or stock photo person.
+
+CLOTHING TASK:
+- Replace only the clothing with the garments shown in the reference images (images 2 onward).
+- Fit the garments naturally to the person's body proportions.
+- Preserve fabric texture, color, and details from the garment reference images.
+
+OUTPUT: photorealistic fashion photography quality. The result must look like the same person wearing the new clothes.
+
+${prompt || ''}`
 
     parts.push({ text: safetyPrompt })
 
