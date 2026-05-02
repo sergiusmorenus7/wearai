@@ -44,8 +44,7 @@
 
     parts.push({ text: safetyPrompt })
 
-    // gemini-2.0-flash-exp soporta responseModalities IMAGE+TEXT (imagen generativa)
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${apiKey}`
 
     const geminiRes = await fetch(url, {
       method: 'POST',
