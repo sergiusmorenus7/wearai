@@ -5,12 +5,14 @@ import styles from './ProfilePage.module.css'
 
 const PHOTO_SLOTS = [
   { key: 'front', title: 'Frontal', hint: 'Cuerpo entero, de frente' },
-  { key: 'side', title: 'Lateral', hint: 'Perfil completo' },
-  { key: 'full', title: 'Referencia principal', hint: 'La foto que usaremos para probar outfits' },
+  { key: 'side',  title: 'Lateral', hint: 'Perfil completo' },
+  { key: 'full',  title: 'Referencia principal', hint: 'La foto que usaremos para probar outfits' },
 ]
 
 export default function ProfilePage({ profile, setProfile }) {
+  const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState('')
+  const [error, setError] = useState('')
   const fileRefs = useRef({})
   const completeness = getProfileCompleteness(profile)
 
@@ -28,19 +30,29 @@ export default function ProfilePage({ profile, setProfile }) {
     if (!file) return
     const reader = new FileReader()
     reader.onload = async ev => {
+      // Guardamos el dataUrl en el estado; saveProfile lo subirá a Storage
       const compressed = await compressProfilePhoto(ev.target.result)
-      setProfile({
-        ...profile,
-        photos: { ...profile.photos, [key]: compressed },
-      })
+      setProfile(prev => ({
+        ...prev,
+        photos: { ...prev.photos, [key]: compressed },
+      }))
       setSaved('')
     }
     reader.readAsDataURL(file)
   }
 
-  function handleSave() {
-    saveProfile(profile)
-    setSaved('Perfil guardado')
+  async function handleSave() {
+    setSaving(true)
+    setError('')
+    try {
+      await saveProfile(profile)
+      setSaved('Perfil guardado')
+      setTimeout(() => setSaved(''), 3000)
+    } catch (err) {
+      setError(`No se pudo guardar: ${err.message}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -125,8 +137,11 @@ export default function ProfilePage({ profile, setProfile }) {
           </label>
 
           <div className={styles.actions}>
-            <button className={styles.saveBtn} onClick={handleSave}>Guardar perfil</button>
+            <button className={styles.saveBtn} onClick={handleSave} disabled={saving}>
+              {saving ? 'Guardando...' : 'Guardar perfil'}
+            </button>
             {saved && <span className={styles.saved}>{saved}</span>}
+            {error && <span className={styles.error}>{error}</span>}
           </div>
         </section>
 
@@ -156,7 +171,7 @@ export default function ProfilePage({ profile, setProfile }) {
             ))}
           </div>
           <div className={styles.privacy}>
-            Las fotos se guardan localmente en este navegador. Para producción conviene moverlas a Supabase Storage con borrado de datos y consentimiento explícito.
+            Las fotos se guardan en Supabase Storage (bucket privado). Solo tú puedes acceder a ellas. Para eliminar tu cuenta y datos, contacta con el soporte.
           </div>
         </section>
       </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { callClaude, imageToContent, parseJSON } from '../lib/ai.js'
+import { callClaude, fetchImageContent, parseJSON } from '../lib/ai.js'
 import { CAT_LABELS } from '../lib/wardrobe.js'
 import styles from './ShopPage.module.css'
 
@@ -168,7 +168,7 @@ export default function ShopPage({ wardrobe }) {
 
     try {
       const sample = wardrobe.slice(0, 6)
-      const imageBlocks = sample.map(p => imageToContent(p.dataUrl)).filter(Boolean)
+      const imageBlocks = (await Promise.all(sample.map(p => fetchImageContent(p.imageUrl || p.dataUrl)))).filter(Boolean)
       const wardrobeDesc = wardrobe.map(p =>
         `${CAT_LABELS[p.cat] || p.cat}${p.name ? ': ' + p.name : ''}${p.color ? ' (' + p.color + ')' : ''}`
       ).join(', ')

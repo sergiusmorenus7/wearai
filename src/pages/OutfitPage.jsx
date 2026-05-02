@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { callClaude, imageToContent, parseJSON } from '../lib/ai.js'
+import { callClaude, fetchImageContent, parseJSON } from '../lib/ai.js'
 import { saveOutfit, CAT_LABELS, CAT_ORDER } from '../lib/wardrobe.js'
 import styles from './OutfitPage.module.css'
 
@@ -50,7 +50,7 @@ export default function OutfitPage({ wardrobe }) {
         }
       })
 
-      const imageBlocks = picks.map(p => imageToContent(p.dataUrl)).filter(Boolean)
+      const imageBlocks = (await Promise.all(picks.map(p => fetchImageContent(p.imageUrl || p.dataUrl)))).filter(Boolean)
       const pieceDesc = picks.map((p, i) =>
         `Imagen ${i + 1}: ${CAT_LABELS[p.cat] || p.cat}${p.name ? ` (${p.name})` : ''}${p.color ? `, color ${p.color}` : ''}`
       ).join('\n')
@@ -99,18 +99,15 @@ Analiza las imágenes visualmente y responde SOLO con JSON puro, sin markdown:
     }
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!result) return
-    saveOutfit({
-      id: Date.now(),
-      pieces: result.pieces.map(p => ({ id: p.id, cat: p.cat, name: p.name, dataUrl: p.dataUrl })),
-      analysis: result.analysis,
-      occasion,
-      weather,
-      savedAt: new Date().toISOString(),
-    })
-    setSavedMsg('Outfit guardado')
-    setTimeout(() => setSavedMsg(''), 2500)
+    try {
+      await saveOutfit({ pieces: result.pieces, analysis: result.analysis, occasion, weather })
+      setSavedMsg('Outfit guardado')
+      setTimeout(() => setSavedMsg(''), 2500)
+    } catch (err) {
+      setSavedMsg(`Error: ${err.message}`)
+    }
   }
 
   return (

@@ -1,14 +1,29 @@
-import { useState } from 'react'
-import { setApiKey, getApiKey } from '../lib/ai.js'
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase.js'
+import { signOut } from '../lib/auth.js'
 import styles from './SettingsModal.module.css'
 
 export default function SettingsModal({ onClose }) {
-  const [key, setKey] = useState(getApiKey())
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [email, setEmail] = useState('')
 
-  function handleSave() {
-    if (!key.trim()) return
-    setApiKey(key.trim())
-    onClose()
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.email) setEmail(data.user.email)
+    })
+  }, [])
+
+  async function handleSignOut() {
+    setLoading(true)
+    try {
+      await signOut()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -16,51 +31,43 @@ export default function SettingsModal({ onClose }) {
       <div className={styles.modal}>
         <div className={styles.header}>
           <div>
-            <p className={styles.kicker}>Configuración</p>
-            <h2 className={styles.title}>Conecta la IA</h2>
+            <p className={styles.kicker}>Cuenta</p>
+            <h2 className={styles.title}>Ajustes</h2>
           </div>
-          <button className={styles.closeBtn} onClick={onClose}>x</button>
+          <button className={styles.closeBtn} onClick={onClose}>✕</button>
         </div>
 
         <div className={styles.body}>
           <div className={styles.section}>
-            <label className={styles.label}>API Key de Google Gemini</label>
+            <label className={styles.label}>Cuenta activa</label>
+            <p className={styles.emailDisplay}>{email || '—'}</p>
+          </div>
+
+          <div className={styles.section}>
+            <label className={styles.label}>Plan</label>
+            <div className={styles.planBadge}>
+              <span className={styles.planName}>Free</span>
+              <span className={styles.planLimit}>60 consultas IA / día</span>
+            </div>
             <p className={styles.hint}>
-              Necesaria para analizar prendas y generar outfits. Puedes crearla en{' '}
-              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className={styles.link}>
-                Google AI Studio
-              </a>.
-            </p>
-            <input
-              type="password"
-              className={styles.input}
-              value={key}
-              onChange={e => setKey(e.target.value)}
-              placeholder="AIza..."
-              autoComplete="off"
-            />
-            <p className={styles.note}>
-              La clave se guarda solo en este navegador con localStorage.
+              Próximamente: plan Premium con consultas ilimitadas, generación de imagen prioritaria y exportación de looks.
             </p>
           </div>
 
           <div className={styles.section}>
-            <label className={styles.label}>Links de afiliado</label>
+            <label className={styles.label}>Afiliados</label>
             <p className={styles.hint}>
-              Antes de publicar, cambia los tags en <code>src/lib/wardrobe.js</code> o en las URLs de tiendas.
+              Configura tus IDs de afiliado en <code>src/lib/wardrobe.js</code> (Awin para Zara/H&M/Mango, Amazon Associates para Amazon) antes de publicar campañas reales.
             </p>
-            <div className={styles.affiliateList}>
-              {['Zara', 'H&M', 'Mango', 'ASOS', 'Amazon Moda'].map(s => (
-                <span key={s} className={styles.affiliateTag}>{s}</span>
-              ))}
-            </div>
           </div>
+
+          {error && <p className={styles.error}>{error}</p>}
         </div>
 
         <div className={styles.footer}>
-          <button className={styles.cancelBtn} onClick={onClose}>Cancelar</button>
-          <button className={styles.saveBtn} onClick={handleSave} disabled={!key.trim()}>
-            Guardar y continuar
+          <button className={styles.cancelBtn} onClick={onClose}>Cerrar</button>
+          <button className={styles.signOutBtn} onClick={handleSignOut} disabled={loading}>
+            {loading ? 'Saliendo...' : 'Cerrar sesión'}
           </button>
         </div>
       </div>

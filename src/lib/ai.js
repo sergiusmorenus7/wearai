@@ -1,23 +1,35 @@
-const STORAGE_KEY = 'wearai_api_key'
+import { supabase } from './supabase.js'
 
-export function setApiKey(key) {
-  localStorage.setItem(STORAGE_KEY, key.trim())
-}
-
-export function getApiKey() {
-  return localStorage.getItem(STORAGE_KEY) || ''
-}
-
+// Convierte dataUrl (base64) a bloque inlineData de Gemini
 export function imageToContent(dataUrl) {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+  const match = dataUrl?.match(/^data:([^;]+);base64,(.+)$/)
   if (!match) return null
   return { inlineData: { mimeType: match[1], data: match[2] } }
 }
 
-export async function callGemini({ messages, system, maxTokens = 4000, temperature = 0.7 }) {
-  const key = getApiKey()
-  if (!key) throw new Error('NO_KEY')
+// Carga imagen desde URL (Supabase Storage o dataUrl) y devuelve inlineData
+export async function fetchImageContent(urlOrDataUrl) {
+  if (!urlOrDataUrl) return null
+  if (urlOrDataUrl.startsWith('data:')) return imageToContent(urlOrDataUrl)
 
+  try {
+    const res = await fetch(urlOrDataUrl)
+    const blob = await res.blob()
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(imageToContent(reader.result))
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+export async function callGemini({ messages, system, maxTokens = 4000, temperature = 0.7 }) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('NO_AUTH')
+
+  // Construye el array de parts para Gemini
   const parts = []
   if (system) parts.push({ text: system + '\n\n' })
 
@@ -34,27 +46,26 @@ export async function callGemini({ messages, system, maxTokens = 4000, temperatu
     }
   }
 
-  const model = 'gemini-2.5-flash'
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`
-
-  const body = {
-    contents: [{ role: 'user', parts }],
-    generationConfig: {
-      maxOutputTokens: maxTokens,
-      temperature,
-      responseMimeType: 'application/json',
-    },
-  }
-
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 60000)
+  const timeout = setTimeout(() => controller.abort(), 90000)
 
   let res
   try {
-    res = await fetch(url, {
+    res = await fetch('/api/gemini', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts }],
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          temperature,
+          responseMimeType: 'application/json',
+          model: 'gemini-2.5-flash',
+        },
+      }),
       signal: controller.signal,
     })
   } catch (e) {
@@ -64,9 +75,13 @@ export async function callGemini({ messages, system, maxTokens = 4000, temperatu
   }
   clearTimeout(timeout)
 
+  if (res.status === 429) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Límite diario de consultas alcanzado.')
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err?.error?.message || `HTTP ${res.status}`)
+    throw new Error(err?.error || `HTTP ${res.status}`)
   }
 
   const data = await res.json()
@@ -76,7 +91,7 @@ export async function callGemini({ messages, system, maxTokens = 4000, temperatu
   return text
 }
 
-// Legacy alias so imports que usan callClaude siguen funcionando durante la transición
+// Alias para compatibilidad con imports existentes
 export const callClaude = callGemini
 
 export function parseJSON(raw) {

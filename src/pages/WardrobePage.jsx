@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
-import { addItem, removeItem, CAT_LABELS, CAT_ORDER } from '../lib/wardrobe.js'
-import { compressImage, isStorageNearLimit } from '../lib/imageUtils.js'
+import { addWardrobeItem, removeWardrobeItem, CAT_LABELS, CAT_ORDER } from '../lib/wardrobe.js'
+import { compressImage } from '../lib/imageUtils.js'
 import styles from './WardrobePage.module.css'
 
 const CATS = [
@@ -16,6 +16,9 @@ export default function WardrobePage({ wardrobe, setWardrobe }) {
   const [itemName, setItemName] = useState('')
   const [itemColor, setItemColor] = useState('')
   const [itemSeason, setItemSeason] = useState('todas')
+  const [adding, setAdding] = useState(false)
+  const [removing, setRemoving] = useState(null)
+  const [addError, setAddError] = useState('')
   const fileRef = useRef()
 
   const visible = filter === 'all' ? wardrobe : wardrobe.filter(i => i.cat === filter)
@@ -30,6 +33,8 @@ export default function WardrobePage({ wardrobe, setWardrobe }) {
     setPreviewUrl(null)
     setItemName('')
     setItemColor('')
+    setItemSeason('todas')
+    setAddError('')
     setShowAddModal(true)
   }
 
@@ -46,27 +51,38 @@ export default function WardrobePage({ wardrobe, setWardrobe }) {
     e.target.value = ''
   }
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!previewUrl) return
-    if (isStorageNearLimit()) {
-      if (!confirm('El almacenamiento local está casi lleno. Es posible que la prenda no se guarde correctamente. ¿Continuar de todas formas?')) return
+    setAdding(true)
+    setAddError('')
+    try {
+      const item = await addWardrobeItem({
+        name: itemName || CAT_LABELS[pendingCat],
+        cat: pendingCat,
+        color: itemColor,
+        season: itemSeason,
+        dataUrl: previewUrl,
+      })
+      setWardrobe(prev => [item, ...prev])
+      setShowAddModal(false)
+    } catch (err) {
+      setAddError(`No se pudo guardar la prenda: ${err.message}`)
+    } finally {
+      setAdding(false)
     }
-    const updated = addItem({
-      id: Date.now(),
-      name: itemName || CAT_LABELS[pendingCat],
-      cat: pendingCat,
-      color: itemColor,
-      season: itemSeason,
-      dataUrl: previewUrl,
-      addedAt: new Date().toISOString(),
-    })
-    setWardrobe(updated)
-    setShowAddModal(false)
   }
 
-  function handleRemove(id) {
+  async function handleRemove(item) {
     if (!confirm('¿Eliminar esta prenda del armario?')) return
-    setWardrobe(removeItem(id))
+    setRemoving(item.id)
+    try {
+      await removeWardrobeItem(item.id, item.imagePath)
+      setWardrobe(prev => prev.filter(i => i.id !== item.id))
+    } catch (err) {
+      alert(`No se pudo eliminar: ${err.message}`)
+    } finally {
+      setRemoving(null)
+    }
   }
 
   return (
@@ -122,10 +138,10 @@ export default function WardrobePage({ wardrobe, setWardrobe }) {
 
       <div className={styles.grid}>
         {visible.map(item => (
-          <div key={item.id} className={styles.card}>
+          <div key={item.id} className={`${styles.card} ${removing === item.id ? styles.removing : ''}`}>
             <div className={styles.imgWrap}>
-              <img src={item.dataUrl} alt={item.name} className={styles.img} />
-              <button className={styles.removeBtn} onClick={() => handleRemove(item.id)} title="Eliminar">x</button>
+              <img src={item.imageUrl} alt={item.name} className={styles.img} />
+              <button className={styles.removeBtn} onClick={() => handleRemove(item)} title="Eliminar">✕</button>
               <span className={styles.catTag}>{CAT_LABELS[item.cat]?.split(' /')[0] || item.cat}</span>
             </div>
             <div className={styles.cardInfo}>
@@ -149,7 +165,7 @@ export default function WardrobePage({ wardrobe, setWardrobe }) {
                 <p className={styles.modalKicker}>Nueva prenda</p>
                 <h2 className={styles.modalTitle}>Añadir al armario</h2>
               </div>
-              <button className={styles.closeBtn} onClick={() => setShowAddModal(false)}>x</button>
+              <button className={styles.closeBtn} onClick={() => setShowAddModal(false)}>✕</button>
             </div>
 
             <div className={styles.modalBody}>
@@ -171,21 +187,13 @@ export default function WardrobePage({ wardrobe, setWardrobe }) {
               <div className={styles.formRow}>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>Categoría</label>
-                  <select
-                    className={styles.formSelect}
-                    value={pendingCat}
-                    onChange={e => setPendingCat(e.target.value)}
-                  >
+                  <select className={styles.formSelect} value={pendingCat} onChange={e => setPendingCat(e.target.value)}>
                     {CAT_ORDER.map(c => <option key={c} value={c}>{CAT_LABELS[c]}</option>)}
                   </select>
                 </div>
                 <div className={styles.formGroup}>
                   <label className={styles.formLabel}>Temporada</label>
-                  <select
-                    className={styles.formSelect}
-                    value={itemSeason}
-                    onChange={e => setItemSeason(e.target.value)}
-                  >
+                  <select className={styles.formSelect} value={itemSeason} onChange={e => setItemSeason(e.target.value)}>
                     <option value="todas">Todas</option>
                     <option value="primavera">Primavera/Verano</option>
                     <option value="otono">Otoño/Invierno</option>
@@ -195,29 +203,21 @@ export default function WardrobePage({ wardrobe, setWardrobe }) {
 
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Nombre</label>
-                <input
-                  className={styles.formInput}
-                  value={itemName}
-                  onChange={e => setItemName(e.target.value)}
-                  placeholder="Ej: Camisa Oxford azul"
-                />
+                <input className={styles.formInput} value={itemName} onChange={e => setItemName(e.target.value)} placeholder="Ej: Camisa Oxford azul" />
               </div>
 
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Color principal</label>
-                <input
-                  className={styles.formInput}
-                  value={itemColor}
-                  onChange={e => setItemColor(e.target.value)}
-                  placeholder="Ej: azul marino, verde oliva, negro..."
-                />
+                <input className={styles.formInput} value={itemColor} onChange={e => setItemColor(e.target.value)} placeholder="Ej: azul marino, verde oliva, negro..." />
               </div>
+
+              {addError && <p style={{ color:'#c0392b', fontSize:13, margin:0 }}>{addError}</p>}
             </div>
 
             <div className={styles.modalFooter}>
               <button className={styles.cancelBtn} onClick={() => setShowAddModal(false)}>Cancelar</button>
-              <button className={styles.confirmBtn} onClick={handleAdd} disabled={!previewUrl}>
-                Añadir al armario
+              <button className={styles.confirmBtn} onClick={handleAdd} disabled={!previewUrl || adding}>
+                {adding ? 'Subiendo...' : 'Añadir al armario'}
               </button>
             </div>
           </div>

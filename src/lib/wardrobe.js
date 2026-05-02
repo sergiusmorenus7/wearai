@@ -1,5 +1,5 @@
-const KEY = 'wearai_wardrobe'
-const OUTFITS_KEY = 'wearai_outfits'
+import { supabase } from './supabase.js'
+import { uploadImage, getPublicUrl, compressImage } from './imageUtils.js'
 
 export const CAT_LABELS = {
   top: 'Top / Camisa',
@@ -11,64 +11,131 @@ export const CAT_LABELS = {
 
 export const CAT_ORDER = ['top', 'bottom', 'outer', 'shoes', 'acc']
 
-export function loadWardrobe() {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) || '[]')
-  } catch {
-    return []
+// Convierte fila de DB a objeto del frontend
+function rowToItem(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    cat: row.category,
+    color: row.color || '',
+    season: row.season || 'todas',
+    imageUrl: row.image_path ? getPublicUrl(row.image_path) : null,
+    imagePath: row.image_path,
+    addedAt: row.added_at,
   }
 }
 
-export function saveWardrobe(items) {
-  localStorage.setItem(KEY, JSON.stringify(items))
+export async function loadWardrobe() {
+  const { data, error } = await supabase
+    .from('wardrobe_items')
+    .select('*')
+    .order('added_at', { ascending: false })
+
+  if (error) throw error
+  return data.map(rowToItem)
 }
 
-export function addItem(item) {
-  const wardrobe = loadWardrobe()
-  wardrobe.push(item)
-  saveWardrobe(wardrobe)
-  return wardrobe
+export async function addWardrobeItem({ name, cat, color, season, dataUrl }) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('No autenticado')
+
+  const itemId = crypto.randomUUID()
+
+  // Comprime y sube imagen al bucket 'wardrobe' (público)
+  const compressed = await compressImage(dataUrl)
+  const imagePath = await uploadImage(compressed, 'wardrobe', user.id, itemId)
+
+  const { data, error } = await supabase
+    .from('wardrobe_items')
+    .insert({
+      id: itemId,
+      user_id: user.id,
+      name,
+      category: cat,
+      color,
+      season,
+      image_path: imagePath,
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return rowToItem(data)
 }
 
-export function removeItem(id) {
-  const wardrobe = loadWardrobe().filter(i => i.id !== id)
-  saveWardrobe(wardrobe)
-  return wardrobe
-}
+export async function removeWardrobeItem(id, imagePath) {
+  const { error } = await supabase.from('wardrobe_items').delete().eq('id', id)
+  if (error) throw error
 
-export function loadOutfits() {
-  try {
-    return JSON.parse(localStorage.getItem(OUTFITS_KEY) || '[]')
-  } catch {
-    return []
+  if (imagePath) {
+    // Elimina imagen del storage (best-effort, no lanzamos error si falla)
+    await supabase.storage.from('wardrobe').remove([imagePath]).catch(() => {})
   }
 }
 
-export function saveOutfit(outfit) {
-  const outfits = loadOutfits()
-  outfits.unshift(outfit)
-  localStorage.setItem(OUTFITS_KEY, JSON.stringify(outfits.slice(0, 50)))
-  return outfits
+// ── Outfits guardados ────────────────────────────────────────
+
+function outfitRowToObj(row) {
+  return {
+    id: row.id,
+    pieces: row.pieces_snapshot || [],
+    analysis: row.analysis || {},
+    occasion: row.occasion,
+    weather: row.weather,
+    generatedImageUrl: row.generated_image_url,
+    savedAt: row.saved_at,
+  }
 }
 
-export function deleteOutfit(id) {
-  const outfits = loadOutfits().filter(o => o.id !== id)
-  localStorage.setItem(OUTFITS_KEY, JSON.stringify(outfits))
-  return outfits
+export async function loadOutfits() {
+  const { data, error } = await supabase
+    .from('outfits')
+    .select('*')
+    .order('saved_at', { ascending: false })
+    .limit(50)
+
+  if (error) throw error
+  return data.map(outfitRowToObj)
 }
+
+export async function saveOutfit({ pieces, analysis, occasion, weather }) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('No autenticado')
+
+  // Guarda snapshot mínimo de las prendas (sin dataUrl para no inflar la DB)
+  const piecesSnapshot = pieces.map(p => ({
+    id: p.id, name: p.name, cat: p.cat, imageUrl: p.imageUrl,
+  }))
+
+  const { data, error } = await supabase
+    .from('outfits')
+    .insert({ user_id: user.id, pieces_snapshot: piecesSnapshot, analysis, occasion, weather })
+    .select()
+    .single()
+
+  if (error) throw error
+  return outfitRowToObj(data)
+}
+
+export async function deleteOutfit(id) {
+  const { error } = await supabase.from('outfits').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ── Links de afiliado ────────────────────────────────────────
 
 const AFFILIATE_PROGRAMS = {
-  zara: { name: 'Zara', tag: 'wearai-21', base: 'https://www.zara.com/es/es/search?searchTerm=' },
-  hm: { name: 'H&M', tag: 'wearai', base: 'https://www2.hm.com/es_es/search-results.html?q=' },
-  mango: { name: 'Mango', tag: 'wearai', base: 'https://shop.mango.com/es/busqueda?q=' },
-  asos: { name: 'ASOS', tag: 'wearai', base: 'https://www.asos.com/es/buscar/?q=' },
-  amazon: { name: 'Amazon Moda', tag: 'wearai-21', base: 'https://www.amazon.es/s?k=' },
+  zara:   { name: 'Zara',         base: 'https://www.zara.com/es/es/search?searchTerm=' },
+  hm:     { name: 'H&M',          base: 'https://www2.hm.com/es_es/search-results.html?q=' },
+  mango:  { name: 'Mango',        base: 'https://shop.mango.com/es/busqueda?q=' },
+  asos:   { name: 'ASOS',         base: 'https://www.asos.com/es/buscar/?q=' },
+  amazon: { name: 'Amazon Moda',  base: 'https://www.amazon.es/s?k=', suffix: '&i=fashion' },
 }
 
 export function buildAffiliateLinks(query, stores = ['zara', 'hm', 'mango', 'asos', 'amazon']) {
   return stores.map(key => {
     const prog = AFFILIATE_PROGRAMS[key]
-    const url = `${prog.base}${encodeURIComponent(query)}&tag=${prog.tag}`
+    const url = `${prog.base}${encodeURIComponent(query)}${prog.suffix || ''}`
     return { store: prog.name, url, key }
   })
 }

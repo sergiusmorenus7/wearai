@@ -4,14 +4,35 @@ import styles from './SavedPage.module.css'
 
 export default function SavedPage() {
   const [outfits, setOutfits] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [removing, setRemoving] = useState(null)
 
   useEffect(() => {
-    setOutfits(loadOutfits())
+    loadOutfits()
+      .then(setOutfits)
+      .catch(console.error)
+      .finally(() => setLoading(false))
   }, [])
 
-  function handleDelete(id) {
+  async function handleDelete(id) {
     if (!confirm('¿Eliminar este outfit guardado?')) return
-    setOutfits(deleteOutfit(id))
+    setRemoving(id)
+    try {
+      await deleteOutfit(id)
+      setOutfits(prev => prev.filter(o => o.id !== id))
+    } catch (err) {
+      alert(`No se pudo eliminar: ${err.message}`)
+    } finally {
+      setRemoving(null)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className={styles.empty}>
+        <p className={styles.emptyTitle}>Cargando outfits...</p>
+      </div>
+    )
   }
 
   if (outfits.length === 0) {
@@ -27,11 +48,14 @@ export default function SavedPage() {
     <div className={styles.page}>
       <div className={styles.grid}>
         {outfits.map(outfit => (
-          <div key={outfit.id} className={styles.card}>
+          <div key={outfit.id} className={`${styles.card} ${removing === outfit.id ? styles.removing : ''}`}>
             <div className={styles.piecesRow}>
-              {outfit.pieces.slice(0, 4).map((p, i) => (
+              {(outfit.pieces || []).slice(0, 4).map((p, i) => (
                 <div key={i} className={styles.pieceThumb}>
-                  <img src={p.dataUrl} alt={p.name || ''} className={styles.pieceImg} />
+                  {p.imageUrl
+                    ? <img src={p.imageUrl} alt={p.name || ''} className={styles.pieceImg} />
+                    : <div className={styles.pieceImgFallback}>{p.name?.[0] || '?'}</div>
+                  }
                 </div>
               ))}
             </div>
@@ -49,7 +73,7 @@ export default function SavedPage() {
                 ))}
               </div>
             </div>
-            <button className={styles.deleteBtn} onClick={() => handleDelete(outfit.id)} title="Eliminar">x</button>
+            <button className={styles.deleteBtn} onClick={() => handleDelete(outfit.id)} title="Eliminar">✕</button>
           </div>
         ))}
       </div>

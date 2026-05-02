@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { callClaude, imageToContent, parseJSON } from '../lib/ai.js'
+import { callClaude, fetchImageContent, parseJSON } from '../lib/ai.js'
 import { CAT_LABELS, CAT_ORDER } from '../lib/wardrobe.js'
 import { getPrimaryPhoto } from '../lib/profile.js'
 import styles from './TryOnPage.module.css'
@@ -76,10 +76,10 @@ export default function TryOnPage({ wardrobe, profile }) {
     setGeneratedImage(null)
 
     try {
-      const imageBlocks = [
-        imageToContent(primaryPhoto),
-        ...selected.filter(item => item.dataUrl).map(item => imageToContent(item.dataUrl)),
-      ].filter(Boolean)
+      const imageBlocks = (await Promise.all([
+        fetchImageContent(primaryPhoto),
+        ...selected.map(item => fetchImageContent(item.imageUrl || item.dataUrl)),
+      ])).filter(Boolean)
 
       const pieces = selected.map(item =>
         `${CAT_LABELS[item.cat] || item.cat}: ${item.name || 'Prenda'}${item.color ? `, ${item.color}` : ''}${item.store ? `, tienda ${item.store}` : ''}`
@@ -128,9 +128,9 @@ Responde SOLO con JSON:
     setError('')
 
     try {
-      const garmentImages = selected
-        .filter(item => item.dataUrl)
-        .map(item => item.dataUrl)
+      const garmentImages = (await Promise.all(
+        selected.map(item => fetchImageContent(item.imageUrl || item.dataUrl))
+      )).filter(Boolean).map(block => `data:${block.inlineData.mimeType};base64,${block.inlineData.data}`)
 
       const res = await fetch('/api/try-on', {
         method: 'POST',
