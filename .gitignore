@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dev.log
+.env
+.env.*
+.env.local
+
+.vercel
+.claude/
